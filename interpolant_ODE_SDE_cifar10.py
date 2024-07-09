@@ -258,8 +258,8 @@ def loss_per_sample_one_sided_s(
     s, x0, x1, t, interpolant
 ):
     """Compute the loss on an individual sample via antithetic samples for x_t = sqrt(1-t)z + sqrt(t) x1 where z=x0."""
-    xt, z = interpolant.calc_xt(t, x0, x1)
-    xtt = xt.unsqueeze(0), t.unsqueeze(0)
+    xt = interpolant.calc_xt(t, x0, x1)
+    xt, t = xt.unsqueeze(0), t.unsqueeze(0)
     st = s(xt, t)
     alpha = interpolant.a(t)
     loss = 0.5 * torch.sum(st**2) + (1 / alpha) * torch.sum(st * x0)
@@ -653,7 +653,7 @@ class Unet(nn.Module):
         dim,
         init_dim=None,
         out_dim=None,
-        dim_mults=(1, 2, 4, 8),
+        dim_mults=(1, 2, 2, 2, 2),
         channels=3,
         with_time_emb=True,
         convnext_mult=2,
@@ -769,13 +769,13 @@ transform = transforms.Compose([
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-batch_size = 256
+train_loader = DataLoader(train_dataset, batch_size=400, shuffle=True)
+batch_size = 400
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def imshow(img):
-    img = img * 0.2 + 0.5
+    img = img * 0.2 + 0.48
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
@@ -785,7 +785,7 @@ import wandb
 "Définition du modèle et des paramètres"
 
 base_lr = 1e-4
-bs = 256
+bs = 400
 
 wandb.init(project='your_project_name', config={
     'base_lr': base_lr,
@@ -797,7 +797,9 @@ wandb.init(project='your_project_name', config={
 
 " Entrainement "
 
-base_lr = 1e-3
+base_lr = 5e-4
+
+
 bs = 256
 
 path = 'one-sided-linear'
@@ -809,8 +811,8 @@ b = Unet(dim=64).to(device)
 eta = Unet(dim=64).to(device)
 opt_b = torch.optim.Adam(b.parameters(), lr=base_lr)
 opt_eta = torch.optim.Adam(eta.parameters(), lr=base_lr)
-sched_b = torch.optim.lr_scheduler.StepLR(optimizer=opt_b, step_size=1500, gamma=0.4)
-sched_eta = torch.optim.lr_scheduler.StepLR(optimizer=opt_eta, step_size=1500, gamma=0.4)
+sched_b = torch.optim.lr_scheduler.StepLR(optimizer=opt_b, step_size=1500, gamma=0.2)
+sched_eta = torch.optim.lr_scheduler.StepLR(optimizer=opt_eta, step_size=1500, gamma=0.2)
 
 epochs = 100
 
@@ -857,7 +859,7 @@ for epoch in range(epochs):
             'model_eta_state_dict': eta.state_dict(),
             'optimizer_b_state_dict': opt_b.state_dict(),
             'optimizer_eta_state_dict': opt_eta.state_dict()
-        }, f'checkpoint_epoch_{epoch+1}.pth')
+        }, f'checkpoint_epoch_{epoch+1}_cifar_10.pth')
         
     if epoch == 2 or (epoch + 1) % 5 == 0:  
         with torch.no_grad():
@@ -872,7 +874,7 @@ for epoch in range(epochs):
             xf_sde = xf_sde.reshape(64, 3, 32, 32)
             imshow(torchvision.utils.make_grid(torch.tensor(xf_sde)))
             plt.tight_layout()
-            plt.savefig(f'results_epoch_{epoch+1}.png')  
+            plt.savefig(f'results_epoch_{epoch+1}_cifar_10.png')  
             plt.close()  
 print("fin train")
 
@@ -884,7 +886,7 @@ plt.title('Training Loss over Epochs')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig('training_loss_plot.png')
+plt.savefig('training_loss_plot_cifar_10.png')
 
 wandb.finish()
 

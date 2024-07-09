@@ -259,7 +259,7 @@ def loss_per_sample_one_sided_s(
 ):
     """Compute the loss on an individual sample via antithetic samples for x_t = sqrt(1-t)z + sqrt(t) x1 where z=x0."""
     xt = interpolant.calc_xt(t, x0, x1)
-    xt,t = xt.unsqueeze(0), t.unsqueeze(0)
+    xt, t = xt.unsqueeze(0), t.unsqueeze(0)
     st = s(xt, t)
     alpha = interpolant.a(t)
     loss = 0.5 * torch.sum(st**2) + (1 / alpha) * torch.sum(st * x0)
@@ -289,6 +289,7 @@ def loss_per_sample_mirror(
 
 def make_loss(loss, bvseta, x0,x1, t, interpolant):
     """Convert a sample loss into a batched loss."""
+    ## Share the batch dimension i for x0, x1, t
     in_dims_set = (None, 0, 0, 0, None)
     batched_loss = torch.vmap(loss, in_dims=in_dims_set, randomness='different')
     loss_val = batched_loss(bvseta, x0, x1, t, interpolant)
@@ -503,146 +504,297 @@ class PFlowIntegrator:
 
 """Définition du modèle Unet avec attention"""
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 
-class GaussianFourierProjection(nn.Module):
-    """Gaussian random features for encoding time steps."""
-    def __init__(self, embed_dim, scale=30.):
+def exists(x):
+    return x is not None
+
+
+def default(val, d):
+    if exists(val):
+        return val
+    return d() if isfunction(d) else d
+
+
+class Residual(nn.Module):
+    def __init__(self, fn):
         super().__init__()
-        self.W = nn.Parameter(torch.randn(embed_dim // 2) * scale, requires_grad=False)
+        self.fn = fn
+
+    def forward(self, x, *args, **kwargs):
+        return self.fn(x, *args, **kwargs) + x
+
+
+def Upsample(dim):
+    return nn.ConvTranspose2d(dim, dim, 4, 2, 1)
+
+
+def Downsample(dim):
+    return nn.Conv2d(dim, dim, 4, 2, 1)
+
+
+class SinusoidalPositionEmbeddings(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, time):
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
+
+
+class ConvNextBlock(nn.Module):
+    """https://arxiv.org/abs/2201.03545"""
+
+    def __init__(self, dim, dim_out, *, time_emb_dim=None, mult=2, norm=True):
+        super().__init__()
+        self.mlp = (
+            nn.Sequential(nn.GELU(), nn.Linear(time_emb_dim, dim))
+            if exists(time_emb_dim)
+            else None
+        )
+
+        self.ds_conv = nn.Conv2d(dim, dim, 7, padding=3, groups=dim)
+
+        self.net = nn.Sequential(
+            nn.GroupNorm(1, dim) if norm else nn.Identity(),
+            nn.Conv2d(dim, dim_out * mult, 3, padding=1),
+            nn.GELU(),
+            nn.GroupNorm(1, dim_out * mult),
+            nn.Conv2d(dim_out * mult, dim_out, 3, padding=1),
+        )
+
+        self.res_conv = nn.Conv2d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
+
+    def forward(self, x, time_emb=None):
+        h = self.ds_conv(x)
+
+        if exists(self.mlp) and exists(time_emb):
+            assert exists(time_emb), "time embedding must be passed in"
+            condition = self.mlp(time_emb)
+            h = h + rearrange(condition, "b c -> b c 1 1")
+
+        h = self.net(h)
+        return h + self.res_conv(x)
+
+
+class Attention(nn.Module):
+    def __init__(self, dim, heads=4, dim_head=32):
+        super().__init__()
+        self.scale = dim_head**-0.5
+        self.heads = heads
+        hidden_dim = dim_head * heads
+        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
 
     def forward(self, x):
-        x_proj = x[:, None] * self.W[None, :] * 2 * np.pi
-        return torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
+        b, c, h, w = x.shape
+        qkv = self.to_qkv(x).chunk(3, dim=1)
+        q, k, v = map(
+            lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
+        )
+        q = q * self.scale
+
+        sim = einsum("b h d i, b h d j -> b h i j", q, k)
+        sim = sim - sim.amax(dim=-1, keepdim=True).detach()
+        attn = sim.softmax(dim=-1)
+
+        out = einsum("b h i j, b h d j -> b h i d", attn, v)
+        out = rearrange(out, "b h (x y) d -> b (h d) x y", x=h, y=w)
+        return self.to_out(out)
 
 
-class Dense(nn.Module):
-    """A fully connected layer that reshapes outputs to feature maps."""
-    def __init__(self, input_dim, output_dim):
+class LinearAttention(nn.Module):
+    def __init__(self, dim, heads=4, dim_head=32):
         super().__init__()
-        self.dense = nn.Linear(input_dim, output_dim)
+        self.scale = dim_head**-0.5
+        self.heads = heads
+        hidden_dim = dim_head * heads
+        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+
+        self.to_out = nn.Sequential(nn.Conv2d(hidden_dim, dim, 1),
+                                    nn.GroupNorm(1, dim))
 
     def forward(self, x):
-        return self.dense(x)[..., None, None]
+        b, c, h, w = x.shape
+        qkv = self.to_qkv(x).chunk(3, dim=1)
+        q, k, v = map(
+            lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
+        )
+
+        q = q.softmax(dim=-2)
+        k = k.softmax(dim=-1)
+
+        q = q * self.scale
+        context = torch.einsum("b h d n, b h e n -> b h d e", k, v)
+
+        out = torch.einsum("b h d e, b h d n -> b h e n", context, q)
+        out = rearrange(out, "b h c (x y) -> b (h c) x y", h=self.heads, x=h, y=w)
+        return self.to_out(out)
 
 
-class Unet(nn.Module):
-    """A time-dependent score-based model built upon U-Net architecture."""
-    def __init__(self, color_channels = 1, channels=[32, 128, 256, 256], embed_dim=256):
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn):
         super().__init__()
-        self.embed = nn.Sequential(GaussianFourierProjection(embed_dim=embed_dim),
-                                   nn.Linear(embed_dim, embed_dim))
-        self.act = lambda x: x * torch.sigmoid(x)
+        self.fn = fn
+        self.norm = nn.GroupNorm(1, dim)
 
-        # Encoding layers
-        self.conv1 = nn.Conv2d(color_channels, channels[0], 3, stride=1, padding=1, bias=False)
-        self.dense1 = Dense(embed_dim, channels[0])
-        self.gnorm1 = nn.GroupNorm(4, num_channels=channels[0])
+    def forward(self, x):
+        x = self.norm(x)
+        return self.fn(x)
 
-        self.conv2 = nn.Conv2d(channels[0], channels[1], 3, stride=2, padding=1, bias=False)
-        self.dense2 = Dense(embed_dim, channels[1])
-        self.gnorm2 = nn.GroupNorm(32, num_channels=channels[1])
 
-        self.conv3 = nn.Conv2d(channels[1], channels[2], 3, stride=2, padding=1, bias=False)
-        self.dense3 = Dense(embed_dim, channels[2])
-        self.gnorm3 = nn.GroupNorm(32, num_channels=channels[2])
+class Unet2(nn.Module):
+    def __init__(
+        self,
+        dim,
+        init_dim=None,
+        out_dim=None,
+        dim_mults=(1, 2, 3, 4),
+        channels=3,
+        with_time_emb=True,
+        convnext_mult=2,
+    ):
+        super().__init__()
 
-        self.conv4 = nn.Conv2d(channels[2], channels[3], 3, stride=2, padding=1, bias=False)
-        self.dense4 = Dense(embed_dim, channels[3])
-        self.gnorm4 = nn.GroupNorm(32, num_channels=channels[3])
+        # determine dimensions
+        self.channels = channels
 
-        # Decoding layers
-        self.tconv4 = nn.ConvTranspose2d(channels[3], channels[2], 3, stride=2, padding=1, output_padding=1, bias=False)
-        self.dense5 = Dense(embed_dim, channels[2])
-        self.tgnorm4 = nn.GroupNorm(32, num_channels=channels[2])
+        init_dim = default(init_dim, dim // 3 * 2)
+        self.init_conv = nn.Conv2d(channels, init_dim, 7, padding=3)
 
-        self.tconv3 = nn.ConvTranspose2d(channels[2] + channels[2], channels[1], 3, stride=2, padding=1, output_padding=1, bias=False)
-        self.dense6 = Dense(embed_dim, channels[1])
-        self.tgnorm3 = nn.GroupNorm(32, num_channels=channels[1])
+        dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
+        in_out = list(zip(dims[:-1], dims[1:]))
 
-        self.tconv2 = nn.ConvTranspose2d(channels[1] + channels[1], channels[0], 3, stride=2, padding=1, output_padding=1, bias=False)
-        self.dense7 = Dense(embed_dim, channels[0])
-        self.tgnorm2 = nn.GroupNorm(32, num_channels=channels[0])
+        block_klass = partial(ConvNextBlock, mult=convnext_mult)
 
-        self.tconv1 = nn.ConvTranspose2d(channels[0] + channels[0], color_channels, 3, stride=1, padding=1)
+        # time embeddings
+        if with_time_emb:
+            time_dim = dim * 4
+            self.time_mlp = nn.Sequential(
+                SinusoidalPositionEmbeddings(dim),
+                nn.Linear(dim, time_dim),
+                nn.GELU(),
+                nn.Linear(time_dim, time_dim),
+            )
+        else:
+            time_dim = None
+            self.time_mlp = None
 
-    def forward(self, x, t):
-        # Obtain the Gaussian random feature embedding for t
-        embed = self.act(self.embed(t))
+        # layers
+        self.downs = nn.ModuleList([])
+        self.ups = nn.ModuleList([])
+        num_resolutions = len(in_out)
 
-        # Encoding path
-        h1 = self.conv1(x)
-        h1 += self.dense1(embed)
-        h1 = self.gnorm1(h1)
-        h1 = self.act(h1)
+        for ind, (dim_in, dim_out) in enumerate(in_out):
+            is_last = ind >= (num_resolutions - 1)
 
-        h2 = self.conv2(h1)
-        h2 += self.dense2(embed)
-        h2 = self.gnorm2(h2)
-        h2 = self.act(h2)
+            self.downs.append(
+                nn.ModuleList(
+                    [
+                        block_klass(dim_in, dim_out, time_emb_dim=time_dim),
+                        block_klass(dim_out, dim_out, time_emb_dim=time_dim),
+                        Residual(PreNorm(dim_out, LinearAttention(dim_out))),
+                        Downsample(dim_out) if not is_last else nn.Identity(),
+                    ]
+                )
+            )
 
-        h3 = self.conv3(h2)
-        h3 += self.dense3(embed)
-        h3 = self.gnorm3(h3)
-        h3 = self.act(h3)
+        mid_dim = dims[-1]
+        self.mid_block1 = block_klass(mid_dim, mid_dim, time_emb_dim=time_dim)
+        self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
+        self.mid_block2 = block_klass(mid_dim, mid_dim, time_emb_dim=time_dim)
 
-        h4 = self.conv4(h3)
-        h4 += self.dense4(embed)
-        h4 = self.gnorm4(h4)
-        h4 = self.act(h4)
+        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
+            is_last = ind >= (num_resolutions - 1)
 
-        # Decoding path
-        h = self.tconv4(h4)
-        h += self.dense5(embed)
-        h = self.tgnorm4(h)
-        h = self.act(h)
-        h = self.tconv3(torch.cat([h, h3], dim=1))
-        h += self.dense6(embed)
-        h = self.tgnorm3(h)
-        h = self.act(h)
+            self.ups.append(
+                nn.ModuleList(
+                    [
+                        block_klass(dim_out * 2, dim_in, time_emb_dim=time_dim),
+                        block_klass(dim_in, dim_in, time_emb_dim=time_dim),
+                        Residual(PreNorm(dim_in, LinearAttention(dim_in))),
+                        Upsample(dim_in) if not is_last else nn.Identity(),
+                    ]
+                )
+            )
 
-        h = self.tconv2(torch.cat([h, h2], dim=1))
-        h += self.dense7(embed)
-        h = self.tgnorm2(h)
-        h = self.act(h)
+        out_dim = default(out_dim, channels)
+        self.final_conv = nn.Sequential(
+            block_klass(dim, dim), nn.Conv2d(dim, out_dim, 1)
+        )
 
-        h = self.tconv1(torch.cat([h, h1], dim=1))
+    def forward(self, x, time):
+        x = self.init_conv(x)
 
-        return h
+        t = self.time_mlp(time) if exists(self.time_mlp) else None
 
+        h = []
+
+        # downsample
+        for block1, block2, attn, downsample in self.downs:
+            x = block1(x, t)
+            x = block2(x, t)
+            x = attn(x)
+            h.append(x)
+            x = downsample(x)
+
+        # bottleneck
+        x = self.mid_block1(x, t)
+        x = self.mid_attn(x)
+        x = self.mid_block2(x, t)
+
+        # upsample
+        for block1, block2, attn, upsample in self.ups:
+            x = torch.cat((x, h.pop()), dim=1)
+            x = block1(x, t)
+            x = block2(x, t)
+            x = attn(x)
+            x = upsample(x)
+
+        return self.final_conv(x)
 
 
 
 """Importation des données"""
 
-transform = transforms.Compose([
-    transforms.Resize((32, 32)),
-    transforms.ToTensor(),  
-    transforms.Normalize((0.1307,), (0.3081,))  
-])
+path = "~/repos/image_net_32_32"
+data_path = "~/repos/image_net_32_32"
+transform = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(),transforms.Normalize(mean = [0.48248774, 0.4579859, 0.40917566], std = [0.1972162, 0.1932053, 0.19407986])])
+full_dataset = datasets.ImageFolder(root=data_path, transform=transform)
+train_loader = DataLoader(full_dataset, batch_size=256, shuffle=True)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+batch_size = 256
+print(len(full_dataset))
+
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True)
-batch_size = 265
+mean = [0.48248774, 0.4579859, 0.40917566]
+std = [0.1972162, 0.1932053, 0.19407986]
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def denormalize(img):
+    """Dénormaliser une image Tensor en utilisant les moyennes et écarts types fournis."""
+    img = img.numpy()  
+    for i in range(3): 
+        img[i] = img[i] * std[i] + mean[i]  
+    return img
 
 def imshow(img):
-    img = img * 0.3081 + 0.1307  
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))  
+    img = denormalize(img) 
+    plt.imshow(np.transpose(img, (1, 2, 0)))
     plt.show()
 
 import wandb 
 
 "Définition du modèle et des paramètres"
 
-base_lr = 1e-3
-bs = 256
+base_lr = 5e-4
+bs = 64
 
 wandb.init(project='your_project_name', config={
     'base_lr': base_lr,
@@ -651,22 +803,24 @@ wandb.init(project='your_project_name', config={
 })
 
 
-
 " Entrainement "
+
+base_lr = 5e-4
+bs = 256
 
 path = 'one-sided-linear'
 interpolant = Interpolant(path=path, gamma_type='')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
-b = Unet().to(device)
-s = Unet().to(device)
+b = Unet2(dim=64).to(device)
+eta = Unet2(dim=64).to(device)
 opt_b = torch.optim.Adam(b.parameters(), lr=base_lr)
-opt_s = torch.optim.Adam(s.parameters(), lr=base_lr)
-sched_b = torch.optim.lr_scheduler.StepLR(optimizer=opt_b, step_size=1500, gamma=0.2)
-sched_s = torch.optim.lr_scheduler.StepLR(optimizer=opt_s, step_size=1500, gamma=0.2)
+opt_eta = torch.optim.Adam(eta.parameters(), lr=base_lr)
+sched_b = torch.optim.lr_scheduler.StepLR(optimizer=opt_b, step_size=2000, gamma=0.2)
+sched_eta = torch.optim.lr_scheduler.StepLR(optimizer=opt_eta, step_size=2000, gamma=0.2)
 
-epochs = 50
+epochs = 150
 
 n = len(train_loader)
 losses = []
@@ -674,7 +828,7 @@ best_loss = float('inf')
 print("Debut train")
 for epoch in range(epochs):
     b.train()
-    s.train()
+    eta.train()
     epoch_loss = 0.0
     for x1, label in train_loader:
         x1 = x1.to(device)
@@ -683,50 +837,50 @@ for epoch in range(epochs):
         ts = torch.rand(size=(x1.shape[0],)).to(device)
 
         loss_b = make_loss(loss_per_sample_b_one_sided, b, x0, x1, ts, interpolant)
-        loss_s = make_loss(loss_per_sample_one_sided_s, s, x0, x1, ts, interpolant)
+        loss_eta = make_loss(loss_per_sample_one_sided_eta, eta, x0, x1, ts, interpolant)
 
-        loss = loss_b + loss_s
+        loss = loss_b + loss_eta
         opt_b.zero_grad()
-        opt_s.zero_grad()
+        opt_eta.zero_grad()
         loss_b.backward()
-        loss_s.backward()
+        loss_eta.backward()
         opt_b.step()
-        opt_s.step()
+        opt_eta.step()
         sched_b.step()
-        sched_s.step()
+        sched_eta.step()
 
         epoch_loss += loss.item()/n
         
-    wandb.log({'Training Loss': epoch_loss, 'Epoch': epoch})
+    wandb.log({'Training Loss': epoch_loss, 'Epoch': epoch,'Learning Rate B': sched_b.get_last_lr()[0]})
     losses.append(epoch_loss)
     
     print(f'Epoch {epoch+1}/{epochs}, Loss: {epoch_loss}')
     
     # Sauvegarder le modèle toutes les 25 époques et si la perte est inférieure au modèle enregistré précédemment
-    if (epoch + 1) % 25 == 0 and epoch_loss < best_loss:
+    if (epoch + 1) % 50 == 0 and epoch_loss < best_loss:
         best_loss = epoch_loss
         torch.save({
             'epoch': epoch + 1,
             'model_b_state_dict': b.state_dict(),
-            'model_s_state_dict': s.state_dict(),
+            'model_eta_state_dict': eta.state_dict(),
             'optimizer_b_state_dict': opt_b.state_dict(),
-            'optimizer_s_state_dict': opt_s.state_dict()
-        }, f'checkpoint_epoch_{epoch+1}_MNIST_score.pth')
+            'optimizer_eta_state_dict': opt_eta.state_dict()
+        }, f'checkpoint_epoch_{epoch+1}_cifar_net.pth')
         
-    if epoch == 2 or (epoch + 1) % 10 == 0:  
+    if epoch == 2 or (epoch + 1) % 25 == 0:  
         with torch.no_grad():
-            #s = SFromEta(eta, interpolant.a)
+            s = SFromEta(eta, interpolant.a)
             b.eval()
-            s.eval()
-            sde_flow = SDEIntegrator(b=b, s=s, eps=torch.tensor(0), n_save=4, start_end=(0.001, 0.999), n_step=10**2).to(device)
+            eta.eval()
+            sde_flow = SDEIntegrator(b=b, s=s, eps=torch.tensor(0.01), n_save=4, start_end=(0.001, 0.999), n_step=10**2).to(device)
             bs = 64
-            x0_tests = torch.randn(bs, 1, 32, 32).to(device)
+            x0_tests = torch.randn(bs, 3, 32, 32).to(device)
             xfs_sde = sde_flow.rollout_forward(x0_tests, 'heun')
             xf_sde = grab(xfs_sde[-1].squeeze())
-            xf_sde = xf_sde.reshape(64, 1, 32, 32)
+            xf_sde = xf_sde.reshape(64, 3, 32, 32)
             imshow(torchvision.utils.make_grid(torch.tensor(xf_sde)))
             plt.tight_layout()
-            plt.savefig(f'results_epoch_{epoch+1}_MNIST_score.png')  
+            plt.savefig(f'results_epoch_{epoch+1}_cifar_net.png')  
             plt.close()  
 print("fin train")
 
@@ -738,7 +892,7 @@ plt.title('Training Loss over Epochs')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig('training_loss_plot_mnist_score.png')
+plt.savefig('training_loss_plot_cifar_net.png')
 
 wandb.finish()
 
