@@ -76,12 +76,12 @@ def draw_mask(event, x, y, flags, param):
         ix, iy = x, y
     elif event == cv2.EVENT_MOUSEMOVE:
         if drawing:
-            cv2.circle(mask, (x, y), 50, (255), -1)
-            cv2.circle(display_image, (x, y), 50, (255), -1)
+            cv2.circle(mask, (x, y), 20, (255), -1)
+            cv2.circle(display_image, (x, y), 20, (255), -1)
     elif event == cv2.EVENT_LBUTTONUP:
         drawing = False
-        cv2.circle(mask, (x, y), 50, (255), -1)
-        cv2.circle(display_image, (x, y), 50, (255), -1)
+        cv2.circle(mask, (x, y), 20, (255), -1)
+        cv2.circle(display_image, (x, y), 20, (255), -1)
 
 
 cv2.namedWindow('image')
