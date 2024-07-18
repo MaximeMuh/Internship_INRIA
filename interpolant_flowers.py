@@ -258,8 +258,8 @@ def loss_per_sample_one_sided_s(
     s, x0, x1, t, interpolant
 ):
     """Compute the loss on an individual sample via antithetic samples for x_t = sqrt(1-t)z + sqrt(t) x1 where z=x0."""
-    xt, z = interpolant.calc_xt(t, x0, x1)
-    xtt = xt.unsqueeze(0), t.unsqueeze(0)
+    xt = interpolant.calc_xt(t, x0, x1)
+    xt, t = xt.unsqueeze(0), t.unsqueeze(0)
     st = s(xt, t)
     alpha = interpolant.a(t)
     loss = 0.5 * torch.sum(st**2) + (1 / alpha) * torch.sum(st * x0)
