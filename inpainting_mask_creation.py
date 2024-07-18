@@ -466,7 +466,7 @@ def generate_image_inpainting(ddpm, x0, sample_size, channel, size, mask, iter):
 
 num_timesteps=1000
 model = Unet(dim=64)
-model_save_path = 'C:/Users/maxim/Desktop/stage_inria/stage_inria/model_epoch_20.pth'
+model_save_path = 'C:/Users/maxim/Desktop/stage_inria/stage_inria/model_epoch_31_inpainting.pth'
 model.load_state_dict(torch.load(model_save_path, map_location=torch.device('cpu')), strict=False)
 model.eval()
 model = DDPM(model, num_timesteps, beta_start=0.0001, beta_end=0.02, device=device)
