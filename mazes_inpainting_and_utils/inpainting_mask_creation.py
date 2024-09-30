@@ -25,7 +25,7 @@ import torch
 import torch.nn.functional as F
 
 
-data_path = 'C:/Users/maxim/Desktop/stage_inria/stage_inria/mazes_data'
+data_path = '~/Documents/mazes_data'
 mean = [0.8772622]
 std = [0.24965507]
 class ConvertToGrayscale:
@@ -89,7 +89,7 @@ cv2.setMouseCallback('image', draw_mask)
 
 while True:
     cv2.imshow('image', display_image)
-    key = cv2.waitKey(1) & 0xFF
+    key = cv2.waitKey(20) & 0xFF
     
     if key == ord('q'):  
         break
@@ -120,7 +120,7 @@ plt.imshow(resized_mask, cmap='gray')
 
 plt.axis('off')
 print(resized_mask.shape)
-plt.savefig('C:/Users/maxim/Desktop/stage_inria/stage_inria/mask_3.png', bbox_inches='tight', pad_inches=0)
+plt.savefig('Documents/mask_3.png', bbox_inches='tight', pad_inches=0)
 
 
 
