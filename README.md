@@ -1,6 +1,6 @@
 ## Introduction
 
-Ce dépôt rassemble le code et les notebooks réalisés durant mon **stage de recherche à l’INRIA Paris (équipe ARGO)**, effectué du **17/06/2024 au 04/09/2024** sous la supervision de **Marc Lelarge**. L’objectif général du stage était d’explorer, de manière progressive et expérimentale, les **liens entre l’assimilation de données** (pour des systèmes dynamiques physiques) et les **modèles génératifs de diffusion** (diffusion probabiliste, score-based, interpolants stochastiques), puis d’en **évaluer la pertinence sur des données structurées** (images d’arbres couvrants uniformes — UST — et **graphes**).
+Ce dépôt rassemble le code et les notebooks réalisés durant mon **stage de recherche à l’INRIA Paris (équipe ARGO)** sous la supervision de **Marc Lelarge**. L’objectif général du stage était d’explorer, de manière progressive et expérimentale, les **liens entre l’assimilation de données** (pour des systèmes dynamiques physiques) et les **modèles génératifs de diffusion** (diffusion probabiliste, score-based, interpolants stochastiques), puis d’en **évaluer la pertinence sur des données structurées** (images d’arbres couvrants uniformes — UST — et **graphes**).
 
 Le travail est organisé en étapes complémentaires :
 1) **Assimilation de données** : implémentations de méthodes classiques (BLUE, 3D-VAR) et démonstrations sur des systèmes jouets (ex. pendule simple, attracteur de Lorenz) pour poser le cadre et les métriques.
