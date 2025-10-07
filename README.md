@@ -182,7 +182,7 @@ L’approche repose sur :
 ### Exemples de résultats
 
 #### Exemple 1 – Masque manuel
-L’utilisateur sélectionne un masque de forme libre (ici triangulaire).  
+L’utilisateur sélectionne un masque de forme libre.  
 Le modèle tente ensuite de combler les zones manquantes.
 
 ![Inpainting avec masque manuel](mazes_inpainting_and_utils/results/result_mask_random.png)
