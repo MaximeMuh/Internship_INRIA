@@ -122,7 +122,7 @@ Le but est d’observer si les interpolants stochastiques peuvent reproduire des
 - Échantillonnage de nouvelles images via intégration des équations différentielles associées.  
 - Visualisation finale des images générées à l’époque 35 :
 
-![Résultats sur le dataset Oxford Flowers (epoch 35)](results_epoch_35_flowers.png)
+![Résultats sur le dataset Oxford Flowers (epoch 35)](interpolant_ODE_SDE/results/results_epoch_60_flowers.png
 
 #### Résultats
 - Les images générées sont **visuellement cohérentes** : formes florales, dégradés de couleurs, textures naturelles.  
@@ -158,7 +158,7 @@ Le travail est regroupé dans le dossier `mazes_inpainting_and_utils/`, qui cont
 
 ---
 
-### 🧩 Principe
+### Principe
 
 L’idée est de considérer les images d’UST comme des “cartes” partielles d’un système à compléter.  
 Une portion du graphe est masquée, puis le modèle tente de **reconstruire la partie manquante** en respectant la cohérence globale.  
@@ -170,7 +170,7 @@ L’approche repose sur :
 
 ---
 
-### ⚙️ Fonctionnement du script
+### Fonctionnement du script
 
 - Le script charge un ensemble d’UST générés par l’algorithme de **Wilson**.  
 - L’utilisateur définit un **masque** (manuellement ou aléatoirement) représentant les zones à reconstruire.  
@@ -179,27 +179,23 @@ L’approche repose sur :
 
 ---
 
-### 📊 Exemples de résultats
+### Exemples de résultats
 
-#### 🖼 Exemple 1 – Masque manuel
+#### Exemple 1 – Masque manuel
 L’utilisateur sélectionne un masque de forme libre (ici triangulaire).  
 Le modèle tente ensuite de combler les zones manquantes.
 
-![Inpainting avec masque manuel](result_mask_random.png)
+![Inpainting avec masque manuel](mazes_inpainting_and_utils/results/result_mask_random.png)
 
-#### 🖼 Exemple 2 – Masque complet
+#### Exemple 2 – Masque complet
 Lorsque le masque couvre toute l’image, le modèle réalise une **génération complète** à partir du bruit initial.
 
-![Inpainting sur masque complet](result_inpainting_full_mask.png)
+![Inpainting sur masque complet](mazes_inpainting_and_utils/results/rresult_inpainting_full_mask.png)
 
-#### 🖼 Comparaison : images initiales vs reconstruites
-| Masque appliqué | Images originales (UST) | Résultats de l’inpainting |
-|------------------|---------------------------|-----------------------------|
-| ![mask](result_mask_random.png) | ![init](result_inpainting_full_mask.png) | ![results](result_inpainting_full_mask.png) |
 
 ---
 
-### 🧠 Interprétation des résultats
+### Interprétation des résultats
 
 Les reconstructions produites montrent une **bonne cohérence visuelle** avec les images originales :  
 les motifs et textures locales sont correctement reproduits, les arêtes s’alignent globalement avec la structure attendue.  
@@ -216,7 +212,7 @@ Une piste d’amélioration, évoquée dans le rapport, serait d’intégrer :
 
 ---
 
-### 🎯 Objectif de cette expérimentation
+### Objectif de cette expérimentation
 
 Ce travail d’inpainting sert de **pont conceptuel** entre la diffusion sur images et l’assimilation de données physiques :  
 comme dans un système réel où certaines observations sont manquantes, le modèle doit “assimiler” des informations partielles pour **reconstruire un état complet cohérent**.
@@ -238,7 +234,7 @@ L’objectif est de voir si un **modèle de diffusion discrète** peut apprendre
 
 ---
 
-### 🧩 Structure du dossier `UST_diffusion/`
+### Structure du dossier `UST_diffusion/`
 
 | Fichier / notebook | Rôle |
 |---------------------|------|
@@ -250,7 +246,7 @@ L’objectif est de voir si un **modèle de diffusion discrète** peut apprendre
 
 ---
 
-### ⚙️ Méthodologie
+### Méthodologie
 
 #### 1. Représentation des données
 Chaque graphe est représenté par sa **matrice d’adjacence** \( A \in \{0,1\}^{n \times n} \).  
@@ -280,7 +276,7 @@ Chaque pénalisation est pondérée par un hyperparamètre, ajusté expérimenta
 
 ---
 
-### 🧮 Expériences
+### Expériences
 
 Les graphes ont été générés et entraînés pour différentes tailles de grilles (de \(4\times4\) à \(10\times10\)).  
 Les figures ci-dessous illustrent le **débruitage progressif** d’un graphe vers une structure proche d’un UST.
@@ -295,7 +291,7 @@ Les figures ci-dessous illustrent le **débruitage progressif** d’un graphe ve
 
 ---
 
-### 📊 Évaluation quantitative
+### Évaluation quantitative
 
 Pour quantifier la qualité des graphes générés :
 - On applique un **post-traitement** supprimant les cycles restants et connectant les composantes isolées.
@@ -311,7 +307,7 @@ Les graphes issus du modèle nécessitent environ **deux fois moins de correctio
 
 ---
 
-### 🧠 Interprétation et perspectives
+### Interprétation et perspectives
 
 - Le modèle de diffusion **assimile partiellement les lois structurelles** des arbres couvrants : les graphes générés sont souvent proches d’UST, surtout pour de petites tailles.  
 - Pour les graphes plus grands, les performances se dégradent à cause :
@@ -326,7 +322,7 @@ Des pistes d’amélioration proposées :
 
 ---
 
-### 🎯 Bilan de cette dernière étape
+### Bilan de cette dernière étape
 
 Cette expérimentation conclut le stage en montrant la **faisabilité d’une diffusion sur graphes** :  
 même si les modèles ne captent pas encore toutes les propriétés physiques, ils constituent une première base pour une **assimilation de données topologique**.  
