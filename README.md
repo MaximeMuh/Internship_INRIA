@@ -122,8 +122,8 @@ Le but est d’observer si les interpolants stochastiques peuvent reproduire des
 - Échantillonnage de nouvelles images via intégration des équations différentielles associées.  
 - Visualisation finale des images générées à l’époque 35 :
 
-![Résultats sur le dataset Oxford Flowers (epoch 35)](interpolant_ODE_SDE/results/results_epoch_60_flowers.png
-
+![Résultats sur le dataset Oxford Flowers (epoch 35)](interpolant_ODE_SDE/results/results_epoch_35_flowers.png)
+![Résultats sur le dataset Oxford Flowers (epoch 60)](interpolant_ODE_SDE/results/results_epoch_60_flowers.png)
 #### Résultats
 - Les images générées sont **visuellement cohérentes** : formes florales, dégradés de couleurs, textures naturelles.  
 - Les interpolants reproduisent fidèlement la diversité des données, confirmant leur **capacité de modélisation continue** entre bruit et structure.  
@@ -190,7 +190,7 @@ Le modèle tente ensuite de combler les zones manquantes.
 #### Exemple 2 – Masque complet
 Lorsque le masque couvre toute l’image, le modèle réalise une **génération complète** à partir du bruit initial.
 
-![Inpainting sur masque complet](mazes_inpainting_and_utils/results/rresult_inpainting_full_mask.png)
+![Inpainting sur masque complet](mazes_inpainting_and_utils/results/result_inpainting_full_mask.png)
 
 
 ---
