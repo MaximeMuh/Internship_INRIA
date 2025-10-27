@@ -18,7 +18,6 @@ The work is organized into complementary stages:
 - **Diffusion on Graphs (UST)**: Notebook for **discrete** diffusion on **adjacency matrices** (generation → constraints → post-processing into USTs).
 - **Utility Data**: UST generation (Wilson's algorithm), test datasets, and visual outputs (subject to local availability).
 
-> The associated **internship report (PDF)**—which presents the context, methodological choices, results, and discussion—is included in the repository and serves as the scientific reference for this code.
 
 ## 1. Data Assimilation — `BLUE_3DVAR.ipynb`
 
@@ -183,12 +182,12 @@ The approach relies on:
 The user selects a free-form mask.
 The model then attempts to fill in the missing areas.
 
-![Inpainting with manual mask](mazes_inpainting_and_utils/results/result_mask_random.png)
+![Inpainting with manual mask](UST_inpainting/results/result_mask_random.png)
 
 #### Example 2 – Full Mask
 When the mask covers the entire image, the model performs **complete generation** from the initial noise.
 
-![Inpainting on full mask](mazes_inpainting_and_utils/results/result_inpainting_full_mask.png)
+![Inpainting on full mask](UST_inpainting/results/result_inpainting_full_mask.png)
 
 ---
 
@@ -348,7 +347,6 @@ Le travail est organisé en étapes complémentaires :
 - **Diffusion sur graphes (UST)** : notebook de diffusion **discrète** sur **matrices d’adjacence** (génération → contraintes → post-traitement en UST).
 - **Données utilitaires** : génération d’UST (algorithme de Wilson), jeux d’essai et sorties visuelles (selon disponibilité locale).
 
-> Le **rapport de stage (PDF)** associé — qui présente le contexte, les choix méthodologiques, les résultats et la discussion — est inclus dans le dépôt et sert de référence scientifique à ce code.
 
 
 ## 1. Assimilation de données — `BLUE_3DVAR.ipynb`
@@ -515,12 +513,12 @@ L’approche repose sur :
 L’utilisateur sélectionne un masque de forme libre.  
 Le modèle tente ensuite de combler les zones manquantes.
 
-![Inpainting avec masque manuel](mazes_inpainting_and_utils/results/result_mask_random.png)
+![Inpainting avec masque manuel](UST_inpainting/results/result_mask_random.png)
 
 #### Exemple 2 – Masque complet
 Lorsque le masque couvre toute l’image, le modèle réalise une **génération complète** à partir du bruit initial.
 
-![Inpainting sur masque complet](mazes_inpainting_and_utils/results/result_inpainting_full_mask.png)
+![Inpainting sur masque complet](UST_inpainting/results/result_inpainting_full_mask.png)
 
 
 ---
